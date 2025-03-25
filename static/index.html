@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Voice Assistant with OpenAI</title>
+    <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+    <div class="container">
+        <h1>MLX Voice Assistant</h1>
+        <div class="model-info">
+            <span>Using: whisper-large-v3-turbo + GPT-4o</span>
+        </div>
+        <div class="recorder-container">
+            <div id="status-indicator" class="status-indicator"></div>
+            <div id="instructions">
+                <p>Press and hold <span class="key">SPACE</span> to record</p>
+                <p>Release to transcribe and get a response</p>
+            </div>
+            <div id="recording-status" class="hidden">Recording...</div>
+        </div>
+        <div class="options">
+            <div class="option-row">
+                <input type="checkbox" id="play-audio" name="play-audio" checked>
+                <label for="play-audio">Play response as speech</label>
+            </div>
+            <div class="option-row">
+                <input type="checkbox" id="use-openai" name="use-openai" checked>
+                <label for="use-openai">Get AI response (OpenAI)</label>
+            </div>
+        </div>
+        <div class="result-container">
+            <h2>Your Message:</h2>
+            <div id="result" class="result-box"></div>
+            
+            <div class="openai-response-container hidden" id="openai-response-container">
+                <h2>Assistant Response:</h2>
+                <div id="openai-response" class="result-box"></div>
+            </div>
+            
+            <div class="audio-controls hidden" id="audio-controls">
+                <button id="play-button" class="audio-button">Replay</button>
+                <button id="stop-button" class="audio-button">Stop</button>
+            </div>
+        </div>
+    </div>
+    <script src="/static/app.js"></script>
+</body>
+</html> 
