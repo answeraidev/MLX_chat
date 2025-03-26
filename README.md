@@ -1,22 +1,29 @@
 # MLX Whisper Voice Assistant
 
-A web application that allows users to record their voice by holding down the spacebar, have it transcribed using MLX Whisper, and get AI responses using OpenAI. The responses can also be played back using Text-to-Speech.
+A web application that allows users to record their voice by holding down the spacebar, have it transcribed and interact with AI - all running locally on Apple Silicon using MLX models.
 
 ## Features
 
 - Press and hold the spacebar to record audio
 - Release the spacebar to automatically transcribe the recording 
-- Get AI responses from OpenAI based on your transcribed audio
+- Get AI responses using local MLX models
 - Text-to-Speech playback of responses
+- Voice Activity Detection (VAD) for better audio capture
 - Clean and intuitive user interface with loading animations
-- Real-time feedback during recording and processing
+
+## Models & Credits
+
+This project integrates several open-source models and libraries:
+
+- **Speech Recognition**: Using [MLX Whisper](https://github.com/ml-explore/mlx-examples/tree/main/whisper) - `mlx-community/whisper-large-v3-turbo`
+- **Language Model**: Using [MLX LM](https://github.com/ml-explore/mlx-lm) - `mlx-community/Mistral-7B-Instruct-v0.3-4bit`
+- **Text-to-Speech**: Using [MLX Audio](https://github.com/Blaizzy/mlx-audio) - `mlx-community/Kokoro-82M-4bit`
+- **Voice Activity Detection**: Using [Silero VAD](https://github.com/snakers4/silero-vad) for precise audio capture
 
 ## Requirements
 
+- macOS with Apple Silicon (MLX requirement)
 - Python 3.8+
-- MLX Whisper library
-- MLX Audio for TTS features
-- OpenAI API key for AI responses
 - Web browser with microphone access
 
 ## Installation
@@ -24,45 +31,42 @@ A web application that allows users to record their voice by holding down the sp
 1. Clone this repository
 2. Install the required packages:
 
-```
+```bash
 pip install -r requirements.txt
 ```
 
-3. Set up your OpenAI API key:
-   - Copy the `.env.example` file to `.env`
-   - Replace `your_openai_api_key_here` with your actual OpenAI API key
-   - If you don't have an OpenAI API key, you can [create one here](https://platform.openai.com/api-keys)
+## Configuration
 
-## Usage
+1. The application provides a user-friendly configuration interface accessible through the gear icon (⚙️) in the UI where you can:
+   - Set your custom system prompt to control how the AI assistant behaves
+   - Enable/disable Voice Activity Detection
+   - Configure TTS settings
 
-1. Start the server:
+## Running the Application
 
-```
+1. Start the FastAPI server:
+```bash
 uvicorn app:app --reload
 ```
 
-2. Open your browser and navigate to `http://localhost:8000`
-3. Grant microphone access when prompted
-4. Press and hold the spacebar to start recording
-5. Release the spacebar to stop recording and see the transcription
-6. The AI response will appear below your transcription, along with audio playback controls
+2. The application will be available at http://localhost:8000
+3. Click the gear icon (⚙️) in the top-right corner to access configuration settings
 
-## Configuration Options
+## Notes
 
-In the web interface, you can:
+- All processing is done locally on your Apple Silicon Mac
+- No API keys or internet connection required
+- Processing speed and memory usage will depend on your Mac's capabilities
 
-- Enable/disable AI responses from OpenAI
-- Enable/disable TTS audio playback
+## Acknowledgments
 
-## Project Structure
+This project is built upon several amazing open-source projects:
+- [MLX](https://github.com/ml-explore/mlx) by Apple
+- [MLX Examples (Whisper)](https://github.com/ml-explore/mlx-examples) for speech recognition
+- [MLX LM](https://github.com/ml-explore/mlx-lm) for the language model implementation
+- [MLX Audio](https://github.com/Blaizzy/mlx-audio) for text-to-speech capabilities
+- [Silero VAD](https://github.com/snakers4/silero-vad) for voice activity detection
 
-- `app.py`: FastAPI backend for serving the web interface, handling transcription, OpenAI integration, and TTS
-- `static/`: Directory containing all frontend assets
-  - `index.html`: Main HTML page
-  - `styles.css`: CSS styling
-  - `app.js`: JavaScript for handling recording and UI interaction
-- `.env.example`: Example environment file for API keys
+## License
 
-## Note
-
-This application uses the browser's MediaRecorder API to record audio, which may not be supported in all browsers. For best results, use a modern browser like Chrome, Firefox, or Edge. 
+MIT License
