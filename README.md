@@ -62,6 +62,7 @@ uvicorn app:app --reload
 
 This project is built upon several amazing open-source projects:
 - [MLX](https://github.com/ml-explore/mlx) by Apple
+- [TTS Voice](https://github.com/remsky/Kokoro-FastAPI)
 - [MLX Examples (Whisper)](https://github.com/ml-explore/mlx-examples) for speech recognition
 - [MLX LM](https://github.com/ml-explore/mlx-lm) for the language model implementation
 - [MLX Audio](https://github.com/Blaizzy/mlx-audio) for text-to-speech capabilities
