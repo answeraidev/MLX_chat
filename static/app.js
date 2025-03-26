@@ -13,6 +13,16 @@ document.addEventListener('DOMContentLoaded', function() {
     const stopButton = document.getElementById('stop-button');
     const modelInfoSpan = document.querySelector('.model-info span');
     
+    // Configuration elements
+    const configButton = document.getElementById('configButton');
+    const configModal = document.getElementById('configModal');
+    const closeModal = document.getElementById('closeModal');
+    const configForm = document.getElementById('configForm');
+    const systemPromptTextarea = document.getElementById('systemPrompt');
+    
+    // Track modal state
+    let isModalOpen = false;
+    
     // Force hide loading animation on page load
     loadingAnimation.style.display = 'none';
     loadingAnimation.classList.add('hidden');
@@ -30,6 +40,74 @@ document.addEventListener('DOMContentLoaded', function() {
     let vadProcessor = null;
     let vadRecordingStartTime = null;
     let vadAudioChunks = [];
+    
+    // Load initial configuration
+    loadConfiguration();
+    
+    // Configuration functions
+    async function loadConfiguration() {
+        try {
+            const response = await fetch('/config/');
+            const config = await response.json();
+            systemPromptTextarea.value = config.system_prompt;
+        } catch (error) {
+            console.error('Error loading configuration:', error);
+        }
+    }
+    
+    async function saveConfiguration(event) {
+        event.preventDefault();
+        
+        const formData = new FormData();
+        formData.append('system_prompt', systemPromptTextarea.value);
+        
+        try {
+            const response = await fetch('/config/', {
+                method: 'POST',
+                body: formData
+            });
+            
+            const result = await response.json();
+            
+            if (result.status === 'success') {
+                closeConfigModal();
+            } else {
+                console.error('Error saving configuration:', result.error);
+            }
+        } catch (error) {
+            console.error('Error saving configuration:', error);
+        }
+    }
+    
+    // Configuration modal functions
+    function openConfigModal() {
+        configModal.style.display = 'block';
+        isModalOpen = true;
+    }
+    
+    function closeConfigModal() {
+        configModal.style.display = 'none';
+        isModalOpen = false;
+    }
+    
+    // Configuration event listeners
+    configButton.addEventListener('click', openConfigModal);
+    closeModal.addEventListener('click', closeConfigModal);
+    
+    window.addEventListener('click', (event) => {
+        if (event.target === configModal) {
+            closeConfigModal();
+        }
+    });
+    
+    // Prevent spacebar from triggering recording when typing in textarea
+    systemPromptTextarea.addEventListener('keydown', (event) => {
+        if (event.code === 'Space') {
+            event.stopPropagation();
+        }
+    });
+    
+    configForm.addEventListener('submit', saveConfiguration);
     
     // Set up the audio recording
     async function setupAudioRecording() {

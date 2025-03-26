@@ -81,6 +81,28 @@ vad_model = None
 vad_get_speech_timestamps = None
 vad_read_audio = None
 
+# Load configuration
+CONFIG_FILE = "config.json"
+
+def load_config():
+    try:
+        with open(CONFIG_FILE, 'r') as f:
+            return json.load(f)
+    except FileNotFoundError:
+        default_config = {
+            "system_prompt": "You are a helpful AI assistant. Please provide clear and concise responses to help the user with their questions."
+        }
+        with open(CONFIG_FILE, 'w') as f:
+            json.dump(default_config, f, indent=4)
+        return default_config
+
+def save_config(config):
+    with open(CONFIG_FILE, 'w') as f:
+        json.dump(config, f, indent=4)
+
+# Load initial configuration
+config = load_config()
+
 # Initialize TTS model and audio player
 def setup_tts():
     global tts_model, audio_player
@@ -130,8 +152,9 @@ async def get_llm_response(transcription_text: str):
     try:
         logger.info(f"Sending query to MLX LM: '{transcription_text[:50]}...'")
         
-        # Simple prompt format
-        prompt = f"Q: {transcription_text}\nA: "
+        # Use system prompt from config
+        system_prompt = config.get("system_prompt", "You are a helpful AI assistant.")
+        prompt = f"{system_prompt}\n\nQ: {transcription_text}\nA: "
         
         # Generate response with minimal parameters
         response = generate(
@@ -567,3 +590,16 @@ async def process_vad_audio(file: UploadFile = File(...)):
                 "error": str(e),
                 "status": "error"
             }
+
+# Add configuration endpoints
+@app.get("/config/")
+async def get_config():
+    """Get the current configuration"""
+    return config
+
+@app.post("/config/")
+async def update_config(system_prompt: str = Form(...)):
+    """Update the configuration"""
+    config["system_prompt"] = system_prompt
+    save_config(config)
+    return {"status": "success", "config": config}

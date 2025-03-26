@@ -5,10 +5,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>MLX Whisper Terminal</title>
     <link rel="stylesheet" href="/static/styles.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
 </head>
 <body>
     <div class="scanlines"></div>
     <div class="container">
+        <button class="config-button" id="configButton">
+            <i class="fas fa-cog"></i>
+        </button>
         <h1>MLX VOICE TERMINAL</h1>
         <div class="model-info">
             <span>> whisper-large-v3-turbo + Mistral-7B-4bit</span>
@@ -59,6 +63,20 @@
             </div>
         </div>
     </div>
+
+    <!-- Configuration Modal -->
+    <div id="configModal" class="modal">
+        <div class="modal-content">
+            <span class="close-button" id="closeModal">&times;</span>
+            <h2>Configuration</h2>
+            <form id="configForm" class="config-form">
+                <label for="systemPrompt">System Prompt:</label>
+                <textarea id="systemPrompt" name="systemPrompt" required></textarea>
+                <button type="submit">Save Configuration</button>
+            </form>
+        </div>
+    </div>
+
     <script src="/static/app.js"></script>
 </body>
 </html> 

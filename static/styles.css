@@ -370,4 +370,95 @@ body::after {
 @keyframes blink-cursor {
     0%, 49% { opacity: 0; }
     50%, 100% { opacity: 1; }
+}
+
+/* Configuration Button and Modal */
+.config-button {
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    background: none;
+    border: none;
+    color: #33ff33;
+    cursor: pointer;
+    font-size: 24px;
+    transition: transform 0.3s ease;
+    z-index: 100;
+}
+
+.config-button:hover {
+    transform: rotate(90deg);
+}
+
+.modal {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.8);
+    z-index: 1000;
+}
+
+.modal-content {
+    position: relative;
+    background-color: #121212;
+    margin: 15% auto;
+    padding: 20px;
+    border: 1px solid #33ff33;
+    width: 80%;
+    max-width: 600px;
+    box-shadow: 0 0 20px rgba(51, 255, 51, 0.4);
+}
+
+.close-button {
+    position: absolute;
+    right: 10px;
+    top: 10px;
+    color: #33ff33;
+    font-size: 24px;
+    font-weight: bold;
+    cursor: pointer;
+}
+
+.close-button:hover {
+    color: #fff;
+}
+
+.config-form {
+    margin-top: 20px;
+}
+
+.config-form label {
+    display: block;
+    margin-bottom: 10px;
+    color: #33ff33;
+}
+
+.config-form textarea {
+    width: 100%;
+    height: 150px;
+    background-color: #1a1a1a;
+    border: 1px solid #33ff33;
+    color: #33ff33;
+    padding: 10px;
+    font-family: 'Courier New', monospace;
+    margin-bottom: 20px;
+    resize: vertical;
+}
+
+.config-form button {
+    background-color: #1a1a1a;
+    color: #33ff33;
+    border: 1px solid #33ff33;
+    padding: 10px 20px;
+    cursor: pointer;
+    font-family: 'Courier New', monospace;
+    transition: all 0.3s ease;
+}
+
+.config-form button:hover {
+    background-color: #33ff33;
+    color: #000;
 } 
