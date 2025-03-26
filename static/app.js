@@ -6,6 +6,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const useOpenAICheckbox = document.getElementById('use-openai');
     const openAIResponseContainer = document.getElementById('openai-response-container');
     const openAIResponseDiv = document.getElementById('openai-response');
+    const loadingAnimation = document.getElementById('loading-animation');
     const audioControls = document.getElementById('audio-controls');
     const playButton = document.getElementById('play-button');
     const stopButton = document.getElementById('stop-button');
@@ -113,8 +114,14 @@ document.addEventListener('DOMContentLoaded', function() {
         
         try {
             resultDiv.textContent = 'Transcribing...';
-            openAIResponseDiv.textContent = useOpenAICheckbox.checked ? 'Waiting for OpenAI response...' : '';
-            openAIResponseContainer.classList[useOpenAICheckbox.checked ? 'remove' : 'add']('hidden');
+            
+            if (useOpenAICheckbox.checked) {
+                openAIResponseDiv.textContent = '';
+                openAIResponseContainer.classList.remove('hidden');
+                loadingAnimation.classList.remove('hidden');
+            } else {
+                openAIResponseContainer.classList.add('hidden');
+            }
             
             // Send the audio to our API endpoint
             const response = await fetch('/transcribe/', {
@@ -134,46 +141,89 @@ document.addEventListener('DOMContentLoaded', function() {
                     modelInfoSpan.textContent = `Using: ${whisperModel} + ${openaiModel}`;
                 }
                 
-                // Display the transcription result
+                // Display the transcription result immediately
                 resultDiv.textContent = data.text || 'No transcription returned';
                 
-                // Display OpenAI response if available
-                if (data.openai_response) {
-                    openAIResponseDiv.textContent = data.openai_response;
-                    openAIResponseContainer.classList.remove('hidden');
-                    console.log("OpenAI response displayed:", data.openai_response);
+                // If OpenAI is enabled, poll for the response
+                if (useOpenAICheckbox.checked && data.transcription_id) {
+                    // Don't need to set text here since we're showing the loading animation
+                    // Start polling for results
+                    pollForOpenAIResponse(data.transcription_id);
                 } else {
-                    if (useOpenAICheckbox.checked) {
-                        openAIResponseDiv.textContent = 'No response received from OpenAI.';
-                        openAIResponseContainer.classList.remove('hidden');
-                        console.warn("No OpenAI response received despite being enabled");
-                    } else {
-                        openAIResponseContainer.classList.add('hidden');
-                    }
-                }
-                
-                // Handle TTS audio if available
-                if (data.tts_filename) {
-                    currentTtsFilename = data.tts_filename;
-                    audioControls.classList.remove('hidden');
-                    console.log("TTS filename received:", data.tts_filename);
-                    // Server handles auto-play, but we'll show controls for manual replay
-                } else {
-                    audioControls.classList.add('hidden');
-                    console.warn("No TTS filename received");
+                    // No OpenAI response expected
+                    openAIResponseContainer.classList.add('hidden');
+                    loadingAnimation.classList.add('hidden');
                 }
             } else {
                 // Display error message
                 resultDiv.textContent = `Error: ${data.error || 'Unknown error'}`;
                 openAIResponseContainer.classList.add('hidden');
+                loadingAnimation.classList.add('hidden');
                 audioControls.classList.add('hidden');
                 console.error('Transcription error:', data.error);
             }
         } catch (error) {
             resultDiv.textContent = 'Error connecting to the server';
             openAIResponseContainer.classList.add('hidden');
+            loadingAnimation.classList.add('hidden');
             audioControls.classList.add('hidden');
             console.error('Error sending audio for transcription:', error);
+        }
+    }
+    
+    // Poll for OpenAI response and TTS result
+    async function pollForOpenAIResponse(transcriptionId, attempt = 0) {
+        try {
+            // Maximum 10 attempts (approx. 10 seconds timeout)
+            if (attempt > 10) {
+                openAIResponseDiv.textContent = 'OpenAI response timed out. Please try again.';
+                loadingAnimation.classList.add('hidden');
+                console.error('Polling for OpenAI response timed out');
+                return;
+            }
+            
+            const response = await fetch(`/get_response/${transcriptionId}`);
+            const data = await response.json();
+            
+            if (data.status === 'processing') {
+                // Still processing, wait 1 second and try again
+                console.log('Still processing OpenAI response, polling again...');
+                setTimeout(() => pollForOpenAIResponse(transcriptionId, attempt + 1), 1000);
+                return;
+            }
+            
+            // Hide loading animation regardless of response
+            loadingAnimation.classList.add('hidden');
+            
+            if (data.status === 'error') {
+                openAIResponseDiv.textContent = `Error: ${data.error || 'Unknown error'}`;
+                console.error('Error getting OpenAI response:', data.error);
+                return;
+            }
+            
+            // Display OpenAI response if available
+            if (data.openai_response) {
+                openAIResponseDiv.textContent = data.openai_response;
+                console.log("OpenAI response displayed:", data.openai_response);
+            } else {
+                openAIResponseDiv.textContent = 'No response received from OpenAI.';
+                console.warn("No OpenAI response received");
+            }
+            
+            // Handle TTS audio if available
+            if (data.tts_filename) {
+                currentTtsFilename = data.tts_filename;
+                audioControls.classList.remove('hidden');
+                console.log("TTS filename received:", data.tts_filename);
+                // Server handles auto-play, but we'll show controls for manual replay
+            } else {
+                audioControls.classList.add('hidden');
+                console.warn("No TTS filename received");
+            }
+        } catch (error) {
+            openAIResponseDiv.textContent = 'Error getting OpenAI response.';
+            loadingAnimation.classList.add('hidden');
+            console.error('Error polling for OpenAI response:', error);
         }
     }
     

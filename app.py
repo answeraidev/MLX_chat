@@ -11,6 +11,7 @@ import soundfile as sf
 import logging
 import openai
 from dotenv import load_dotenv
+import mlx
 
 # Load environment variables from .env file if present
 load_dotenv()
@@ -38,15 +39,8 @@ else:
         logger.info(f"Initializing OpenAI client with API key ending in ...{OPENAI_API_KEY[-4:]}")
         openai_client = openai.OpenAI(api_key=OPENAI_API_KEY)
         
-        # Try a simple test call to verify the API key works
-        test_response = openai_client.chat.completions.create(
-            model="gpt-4o-search-preview",
-            messages=[{"role": "user", "content": "Hello, testing connection."}],
-            max_tokens=5
-        )
-        logger.info(f"OpenAI test successful. Response: {test_response.choices[0].message.content}")
         
-        OPENAI_AVAILABLE = True
+        OPENAI_AVAILABLE = True   
         logger.info("OpenAI client initialized successfully and API key verified")
     except Exception as e:
         logger.error(f"Error initializing OpenAI client: {str(e)}")
@@ -57,7 +51,7 @@ else:
 
 # Define the models used
 WHISPER_MODEL = "mlx-community/whisper-large-v3-turbo"
-OPENAI_MODEL = "gpt-4o"
+OPENAI_MODEL = "gpt-4o-search-preview"
 
 app = FastAPI()
 
@@ -120,7 +114,7 @@ async def get_openai_response(transcription_text: str):
         response = openai_client.chat.completions.create(
             model=OPENAI_MODEL,
             messages=[
-                {"role": "system", "content": "You are a helpful assistant. Please provide concise responses."},
+                {"role": "system", "content": "You are a helpful assistant. Please provide concise short responses. Responses should not contain any special characters as your response will be used by a TTS system. So it should flow well for a TTS system, not using special characters as these will be spoken out loud, which will give a poor user experience. "},
                 {"role": "user", "content": transcription_text}
             ],
             max_tokens=300
@@ -161,64 +155,27 @@ async def transcribe_audio(file: UploadFile = File(...), play_audio: bool = Form
             transcription_text = result["text"]
             logger.info(f"Transcription result: '{transcription_text[:50]}...'")
             
-            # If OpenAI is enabled and requested, get response from OpenAI
-            openai_response = None
-            if use_openai and OPENAI_AVAILABLE:
-                logger.info("OpenAI is enabled and available. Getting response...")
-                openai_response = await get_openai_response(transcription_text)
-                if openai_response:
-                    logger.info(f"OpenAI response received: '{openai_response[:50]}...'")
-                else:
-                    logger.warning("Failed to get response from OpenAI.")
-            else:
-                if not use_openai:
-                    logger.info("OpenAI integration disabled by user.")
-                if not OPENAI_AVAILABLE:
-                    logger.warning("OpenAI is not available. Check API key and initialization.")
+            # Store transcription in a temporary location with unique ID for later retrieval
+            transcription_id = str(uuid.uuid4())
             
-            # Text to use for TTS - either OpenAI response or transcription
-            tts_text = openai_response if openai_response else transcription_text
-            logger.info(f"Using text for TTS: '{tts_text[:50]}...'")
-            
-            # If TTS is available, generate audio
-            tts_filename = None
-            if play_audio and TTS_AVAILABLE and tts_model is not None:
-                try:
-                    logger.info("Generating TTS audio...")
-                    tts_filename = await generate_tts(tts_text)
-                    logger.info(f"TTS audio generated: {tts_filename}")
-                    
-                    # Auto-play the audio response
-                    if tts_filename:
-                        logger.info("Attempting to auto-play the audio...")
-                        play_success = await play_audio_file(tts_filename)
-                        if play_success:
-                            logger.info("Audio auto-played successfully")
-                        else:
-                            logger.warning("Failed to auto-play audio")
-                except Exception as e:
-                    logger.error(f"TTS generation error: {str(e)}")
-                    import traceback
-                    logger.error(f"TTS traceback: {traceback.format_exc()}")
-            else:
-                if not play_audio:
-                    logger.info("Audio playback disabled by user.")
-                if not TTS_AVAILABLE:
-                    logger.warning("TTS is not available.")
-                if tts_model is None:
-                    logger.warning("TTS model is not initialized.")
-            
-            return {
+            response_data = {
                 "text": transcription_text,
-                "openai_response": openai_response,
+                "transcription_id": transcription_id,
                 "status": "success",
-                "tts_filename": tts_filename,
                 "models": {
                     "whisper": WHISPER_MODEL,
                     "openai": OPENAI_MODEL if OPENAI_AVAILABLE else None,
                     "tts": "mlx-community/Kokoro-82M-4bit" if TTS_AVAILABLE else None
                 }
             }
+            
+            # If OpenAI is requested and available, trigger the response asynchronously
+            if use_openai and OPENAI_AVAILABLE:
+                # Create a task to process OpenAI response and TTS in the background
+                import asyncio
+                asyncio.create_task(process_openai_and_tts(transcription_id, transcription_text, play_audio))
+            
+            return response_data
         except Exception as e:
             # Clean up the temporary file in case of error
             os.unlink(temp_file.name)
@@ -229,6 +186,75 @@ async def transcribe_audio(file: UploadFile = File(...), play_audio: bool = Form
                 "error": str(e),
                 "status": "error"
             }
+
+# Dictionary to store OpenAI responses and TTS filenames
+results_store = {}
+
+async def process_openai_and_tts(transcription_id: str, transcription_text: str, play_audio: bool = False):
+    """Process OpenAI response and TTS generation in the background"""
+    try:
+        # Get response from OpenAI
+        openai_response = await get_openai_response(transcription_text)
+        
+        # Text to use for TTS - either OpenAI response or transcription
+        tts_text = openai_response if openai_response else transcription_text
+        
+        # TTS generation if requested
+        tts_filename = None
+        if play_audio and TTS_AVAILABLE and tts_model is not None:
+            try:
+                logger.info("Generating TTS audio...")
+                tts_filename = await generate_tts(tts_text)
+                logger.info(f"TTS audio generated: {tts_filename}")
+                
+                # Auto-play the audio response
+                if tts_filename:
+                    logger.info("Attempting to auto-play the audio...")
+                    play_success = await play_audio_file(tts_filename)
+                    if play_success:
+                        logger.info("Audio auto-played successfully")
+                    else:
+                        logger.warning("Failed to auto-play audio")
+            except Exception as e:
+                logger.error(f"TTS generation error: {str(e)}")
+                import traceback
+                logger.error(f"TTS traceback: {traceback.format_exc()}")
+        
+        # Store the results
+        results_store[transcription_id] = {
+            "openai_response": openai_response,
+            "tts_filename": tts_filename,
+            "completed": True
+        }
+        
+    except Exception as e:
+        logger.error(f"Background processing error: {str(e)}")
+        import traceback
+        logger.error(f"Background processing traceback: {traceback.format_exc()}")
+        
+        # Store error in results
+        results_store[transcription_id] = {
+            "error": str(e),
+            "completed": True
+        }
+
+@app.get("/get_response/{transcription_id}")
+async def get_response(transcription_id: str):
+    """Get the OpenAI response and TTS filename for a given transcription ID"""
+    if transcription_id not in results_store:
+        return JSONResponse({"error": "Transcription ID not found", "status": "error"}, status_code=404)
+    
+    result = results_store[transcription_id]
+    
+    if not result.get("completed", False):
+        return {"status": "processing"}
+    
+    return {
+        "openai_response": result.get("openai_response"),
+        "tts_filename": result.get("tts_filename"),
+        "status": "error" if "error" in result else "success",
+        "error": result.get("error")
+    }
 
 async def generate_tts(text: str, voice: str = "af_heart", speed: float = 1.0):
     """Generate TTS audio for the given text and return the filename"""

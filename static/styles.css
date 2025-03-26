@@ -182,4 +182,64 @@ h2 {
     border-radius: 15px;
     display: inline-block;
     margin: 0 auto 15px;
+}
+
+/* Loading Animation */
+.loading-container {
+    display: flex;
+    align-items: center;
+    margin: 10px 0;
+}
+
+.loading-text {
+    margin-left: 10px;
+    font-size: 14px;
+    color: #666;
+}
+
+.loading-spinner {
+    width: 20px;
+    height: 20px;
+    border: 2px solid rgba(0, 123, 255, 0.2);
+    border-radius: 50%;
+    border-top-color: #007bff;
+    animation: spin 1s ease-in-out infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+/* Pulse Animation for thinking indicator */
+.pulse {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #007bff;
+    margin: 0 2px;
+    animation: pulse 1.5s infinite;
+}
+
+.pulse:nth-child(2) {
+    animation-delay: 0.3s;
+}
+
+.pulse:nth-child(3) {
+    animation-delay: 0.6s;
+}
+
+@keyframes pulse {
+    0% {
+        transform: scale(0.8);
+        opacity: 0.5;
+    }
+    50% {
+        transform: scale(1.2);
+        opacity: 1;
+    }
+    100% {
+        transform: scale(0.8);
+        opacity: 0.5;
+    }
 } 
