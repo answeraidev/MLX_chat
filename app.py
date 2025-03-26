@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, File, Form
+from fastapi import FastAPI, UploadFile, File, Form, WebSocket
 import mlx_whisper
 import tempfile
 import os
@@ -12,6 +12,14 @@ import logging
 from dotenv import load_dotenv
 import mlx
 from mlx_lm import load, generate
+import io
+import base64
+import asyncio
+import json
+import torch
+
+# Replace Silero VAD direct import with torch.hub method
+# from silero_vad import load_silero_vad, get_speech_timestamps, read_audio as vad_read_audio
 
 # Load environment variables from .env file if present
 load_dotenv()
@@ -68,6 +76,11 @@ os.makedirs(OUTPUT_FOLDER, exist_ok=True)
 tts_model = None
 audio_player = None
 
+# Load Silero VAD model once at startup
+vad_model = None
+vad_get_speech_timestamps = None
+vad_read_audio = None
+
 # Initialize TTS model and audio player
 def setup_tts():
     global tts_model, audio_player
@@ -92,6 +105,21 @@ def setup_tts():
 async def startup_event():
     # Initialize TTS model and audio player on server startup
     setup_tts()
+    
+    # Initialize Silero VAD model
+    global vad_model, vad_get_speech_timestamps, vad_read_audio
+    try:
+        logger.info("Loading Silero VAD model")
+        torch.set_num_threads(1)  # To avoid performance issues
+        model, utils = torch.hub.load(repo_or_dir='snakers4/silero-vad', model='silero_vad')
+        vad_model = model
+        vad_get_speech_timestamps, _, vad_read_audio, _, _ = utils
+        logger.info("Silero VAD model loaded successfully")
+    except Exception as e:
+        logger.error(f"Error loading Silero VAD model: {str(e)}")
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
+        logger.warning("VAD features will be disabled due to initialization error.")
 
 async def get_llm_response(transcription_text: str):
     """Query local MLX LM model with the transcription text and return the response"""
@@ -167,7 +195,6 @@ async def transcribe_audio(file: UploadFile = File(...), play_audio: bool = Form
             # If LLM is requested and available, trigger the response asynchronously
             if use_llm and LLM_AVAILABLE:
                 # Create a task to process LLM response and TTS in the background
-                import asyncio
                 asyncio.create_task(process_llm_and_tts(transcription_id, transcription_text, play_audio))
             
             return response_data
@@ -395,3 +422,148 @@ async def root():
     with open("static/index.html", "r") as f:
         html_content = f.read()
     return HTMLResponse(content=html_content)
+
+@app.websocket("/vad-stream/")
+async def vad_stream(websocket: WebSocket):
+    await websocket.accept()
+    logger.info("VAD WebSocket connection established")
+    
+    try:
+        # Buffer to accumulate audio data
+        audio_buffer = []
+        speech_detected = False
+        
+        # Keep track of consecutive speech/non-speech frames for debouncing
+        consecutive_speech_frames = 0
+        consecutive_silence_frames = 0
+        
+        while True:
+            # Receive audio chunk
+            data = await websocket.receive_text()
+            
+            # Skip empty data or client closing messages
+            if not data or data == "close":
+                break
+            
+            # Decode base64 audio data
+            try:
+                audio_data = base64.b64decode(data.split(',')[1] if ',' in data else data)
+                audio_np = np.frombuffer(audio_data, dtype=np.float32)
+                
+                # Add chunk to buffer
+                audio_buffer.append(audio_np)
+                
+                # Process with VAD if we have enough data
+                if len(audio_buffer) >= 3:
+                    combined_audio = np.concatenate(audio_buffer)
+                    
+                    # Process with Silero VAD
+                    if vad_model is not None and vad_get_speech_timestamps is not None:
+                        # Lower threshold for initial detection to be more sensitive (0.65 → 0.5)
+                        # Maintain moderate threshold for ongoing speech (0.4)
+                        threshold = 0.4 if speech_detected else 0.65
+                        
+                        speech_timestamps = vad_get_speech_timestamps(
+                            combined_audio, 
+                            vad_model,
+                            threshold=threshold,
+                            sampling_rate=16000,
+                            min_speech_duration_ms=100,  # Keep this low to catch short speech segments
+                            min_silence_duration_ms=150, # Reduced from 400ms to 150ms for faster speech end detection
+                            speech_pad_ms=50,  # Reduced from 70ms to 50ms
+                            return_seconds=True
+                        )
+                        
+                        # Determine if speech is present in the audio
+                        raw_speech_detected = len(speech_timestamps) > 0
+                        
+                        # Implement debouncing to prevent rapid switching
+                        if raw_speech_detected:
+                            consecutive_speech_frames += 1
+                            consecutive_silence_frames = 0
+                        else:
+                            consecutive_silence_frames += 1
+                            consecutive_speech_frames = 0
+                        
+                        # Apply debouncing logic: require fewer consecutive frames to start (2 instead of 3)
+                        if not speech_detected and consecutive_speech_frames >= 2:
+                            speech_detected = True
+                            await websocket.send_json({
+                                "status": "speech_state",
+                                "speech_detected": True
+                            })
+                        elif speech_detected and consecutive_silence_frames >= 1: # Reduced from 2 to 1 for faster end detection
+                            speech_detected = False
+                            await websocket.send_json({
+                                "status": "speech_state",
+                                "speech_detected": False
+                            })
+                    
+                    # Keep more frames in buffer for context
+                    if len(audio_buffer) > 15:  # Increased from 10 to 15
+                        audio_buffer = audio_buffer[-5:]  # Keep more chunks (3 → 5) for better context
+            
+            except Exception as e:
+                logger.error(f"Error processing audio chunk: {str(e)}")
+                continue
+    
+    except Exception as e:
+        logger.error(f"WebSocket error: {str(e)}")
+    finally:
+        logger.info("VAD WebSocket connection closed")
+
+@app.post("/process-vad-audio/")
+async def process_vad_audio(file: UploadFile = File(...), play_audio: bool = Form(False), use_llm: bool = Form(True)):
+    """Process audio captured using VAD"""
+    # This is similar to the transcribe_audio endpoint but specifically for VAD-captured audio
+    with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(file.filename)[1]) as temp_file:
+        # Write the uploaded file content to the temporary file
+        content = await file.read()
+        temp_file.write(content)
+        temp_file.flush()
+        
+        try:
+            # Transcribe the audio using MLX Whisper with the specified model
+            logger.info(f"Transcribing VAD-captured audio: {temp_file.name}")
+            
+            result = mlx_whisper.transcribe(
+                temp_file.name,
+                path_or_hf_repo=WHISPER_MODEL,
+            )
+            
+            # Clean up the temporary file
+            os.unlink(temp_file.name)
+            
+            transcription_text = result["text"]
+            logger.info(f"VAD transcription result: '{transcription_text[:50]}...'")
+            
+            # Store transcription in a temporary location with unique ID for later retrieval
+            transcription_id = str(uuid.uuid4())
+            
+            response_data = {
+                "text": transcription_text,
+                "transcription_id": transcription_id,
+                "status": "success",
+                "models": {
+                    "whisper": WHISPER_MODEL,
+                    "llm": LLM_MODEL if LLM_AVAILABLE else None,
+                    "tts": "mlx-community/Kokoro-82M-4bit" if TTS_AVAILABLE else None
+                }
+            }
+            
+            # If LLM is requested and available, trigger the response asynchronously
+            if use_llm and LLM_AVAILABLE:
+                # Create a task to process LLM response and TTS in the background
+                asyncio.create_task(process_llm_and_tts(transcription_id, transcription_text, play_audio))
+            
+            return response_data
+        except Exception as e:
+            # Clean up the temporary file in case of error
+            os.unlink(temp_file.name)
+            logger.error(f"VAD transcription error: {str(e)}")
+            import traceback
+            logger.error(f"VAD transcription traceback: {traceback.format_exc()}")
+            return {
+                "error": str(e),
+                "status": "error"
+            }
