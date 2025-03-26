@@ -3,14 +3,15 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Voice Assistant with OpenAI</title>
+    <title>MLX Whisper Terminal</title>
     <link rel="stylesheet" href="/static/styles.css">
 </head>
 <body>
+    <div class="scanlines"></div>
     <div class="container">
-        <h1>MLX Voice Assistant</h1>
+        <h1>MLX VOICE TERMINAL</h1>
         <div class="model-info">
-            <span>Using: whisper-large-v3-turbo + GPT-4o</span>
+            <span>> whisper-large-v3-turbo + Mistral-7B-4bit</span>
         </div>
         <div class="recorder-container">
             <div id="status-indicator" class="status-indicator"></div>
@@ -18,7 +19,7 @@
                 <p>Press and hold <span class="key">SPACE</span> to record</p>
                 <p>Release to transcribe and get a response</p>
             </div>
-            <div id="recording-status" class="hidden">Recording...</div>
+            <div id="recording-status" class="hidden">RECORDING...</div>
         </div>
         <div class="options">
             <div class="option-row">
@@ -27,27 +28,28 @@
             </div>
             <div class="option-row">
                 <input type="checkbox" id="use-openai" name="use-openai" checked>
-                <label for="use-openai">Get AI response (OpenAI)</label>
+                <label for="use-openai">Get AI response (MLX)</label>
             </div>
         </div>
         <div class="result-container">
-            <h2>Your Message:</h2>
+            <h2>> Your Message:</h2>
             <div id="result" class="result-box"></div>
             
             <div class="openai-response-container hidden" id="openai-response-container">
-                <h2>Assistant Response:</h2>
+                <h2>> Assistant Response:</h2>
                 <div id="openai-response" class="result-box"></div>
-                <div id="loading-animation" class="loading-container hidden">
-                    <div class="loading-spinner"></div>
-                    <div class="loading-text">
-                        Thinking<span class="pulse"></span><span class="pulse"></span><span class="pulse"></span>
-                    </div>
+            </div>
+            
+            <div id="loading-animation" class="loading-container hidden">
+                <div class="loading-spinner"></div>
+                <div class="loading-text">
+                    Processing<span class="pulse"></span><span class="pulse"></span><span class="pulse"></span>
                 </div>
             </div>
             
             <div class="audio-controls hidden" id="audio-controls">
-                <button id="play-button" class="audio-button">Replay</button>
-                <button id="stop-button" class="audio-button">Stop</button>
+                <button id="play-button" class="audio-button">REPLAY</button>
+                <button id="stop-button" class="audio-button">STOP</button>
             </div>
         </div>
     </div>

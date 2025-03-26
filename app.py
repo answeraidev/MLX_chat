@@ -9,9 +9,9 @@ import uuid
 import numpy as np
 import soundfile as sf
 import logging
-import openai
 from dotenv import load_dotenv
 import mlx
+from mlx_lm import load, generate
 
 # Load environment variables from .env file if present
 load_dotenv()
@@ -29,29 +29,22 @@ except ImportError:
     logger.warning("MLX Audio not installed. TTS features will be disabled.")
     TTS_AVAILABLE = False
 
-# Configure OpenAI client
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-if not OPENAI_API_KEY:
-    logger.warning("OPENAI_API_KEY not found in environment variables. OpenAI features will be disabled.")
-    OPENAI_AVAILABLE = False
-else:
-    try:
-        logger.info(f"Initializing OpenAI client with API key ending in ...{OPENAI_API_KEY[-4:]}")
-        openai_client = openai.OpenAI(api_key=OPENAI_API_KEY)
-        
-        
-        OPENAI_AVAILABLE = True   
-        logger.info("OpenAI client initialized successfully and API key verified")
-    except Exception as e:
-        logger.error(f"Error initializing OpenAI client: {str(e)}")
-        import traceback
-        logger.error(f"Traceback: {traceback.format_exc()}")
-        OPENAI_AVAILABLE = False
-        logger.warning("OpenAI features will be disabled due to initialization error.")
-
 # Define the models used
 WHISPER_MODEL = "mlx-community/whisper-large-v3-turbo"
-OPENAI_MODEL = "gpt-4o-search-preview"
+LLM_MODEL = "mlx-community/Mistral-7B-Instruct-v0.3-4bit"  # Using Mistral 7B 4-bit quantized
+
+# Initialize MLX LM model
+try:
+    logger.info(f"Loading MLX LM model from {LLM_MODEL}")
+    llm_model, tokenizer = load(LLM_MODEL)
+    LLM_AVAILABLE = True
+    logger.info("MLX LM model loaded successfully")
+except Exception as e:
+    logger.error(f"Error loading MLX LM model: {str(e)}")
+    import traceback
+    logger.error(f"Traceback: {traceback.format_exc()}")
+    LLM_AVAILABLE = False
+    logger.warning("LLM features will be disabled due to initialization error.")
 
 app = FastAPI()
 
@@ -100,38 +93,40 @@ async def startup_event():
     # Initialize TTS model and audio player on server startup
     setup_tts()
 
-async def get_openai_response(transcription_text: str):
-    """Query OpenAI API with the transcription text and return the response"""
-    if not OPENAI_AVAILABLE:
-        logger.warning("OpenAI features are disabled. Skipping OpenAI query.")
+async def get_llm_response(transcription_text: str):
+    """Query local MLX LM model with the transcription text and return the response"""
+    if not LLM_AVAILABLE:
+        logger.warning("LLM features are disabled. Skipping LLM query.")
         return None
 
     try:
-        logger.info(f"Sending query to OpenAI: '{transcription_text[:50]}...'")
-        logger.info(f"Using API key ending with: ...{OPENAI_API_KEY[-4:] if OPENAI_API_KEY else 'None'}")
-        logger.info(f"Using model: {OPENAI_MODEL}")
+        logger.info(f"Sending query to MLX LM: '{transcription_text[:50]}...'")
         
-        response = openai_client.chat.completions.create(
-            model=OPENAI_MODEL,
-            messages=[
-                {"role": "system", "content": "You are a helpful assistant. Please provide concise short responses. Responses should not contain any special characters as your response will be used by a TTS system. So it should flow well for a TTS system, not using special characters as these will be spoken out loud, which will give a poor user experience. "},
-                {"role": "user", "content": transcription_text}
-            ],
-            max_tokens=300
+        # Simple prompt format
+        prompt = f"Q: {transcription_text}\nA: "
+        
+        # Generate response with minimal parameters
+        response = generate(
+            llm_model, 
+            tokenizer, 
+            prompt=prompt,
+            max_tokens=100,  # Reduced for more concise responses
+            verbose=False  # Disable verbose output
         )
         
-        logger.info(f"OpenAI API response status: SUCCESS")
-        assistant_response = response.choices[0].message.content.strip()
-        logger.info(f"Received response from OpenAI: '{assistant_response[:50]}...'")
-        return assistant_response
+        # Clean up the response
+        response = response.strip().split('\n')[0]  # Take only the first line
+        logger.info(f"MLX LM response: '{response}'")
+            
+        return response
     except Exception as e:
-        logger.error(f"Error querying OpenAI: {str(e)}")
+        logger.error(f"Error querying MLX LM: {str(e)}")
         import traceback
         logger.error(f"Traceback: {traceback.format_exc()}")
         return None
 
 @app.post("/transcribe/")
-async def transcribe_audio(file: UploadFile = File(...), play_audio: bool = Form(False), use_openai: bool = Form(True)):
+async def transcribe_audio(file: UploadFile = File(...), play_audio: bool = Form(False), use_llm: bool = Form(True)):
     # Create a temporary file to store the uploaded audio
     with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(file.filename)[1]) as temp_file:
         # Write the uploaded file content to the temporary file
@@ -164,16 +159,16 @@ async def transcribe_audio(file: UploadFile = File(...), play_audio: bool = Form
                 "status": "success",
                 "models": {
                     "whisper": WHISPER_MODEL,
-                    "openai": OPENAI_MODEL if OPENAI_AVAILABLE else None,
+                    "llm": LLM_MODEL if LLM_AVAILABLE else None,
                     "tts": "mlx-community/Kokoro-82M-4bit" if TTS_AVAILABLE else None
                 }
             }
             
-            # If OpenAI is requested and available, trigger the response asynchronously
-            if use_openai and OPENAI_AVAILABLE:
-                # Create a task to process OpenAI response and TTS in the background
+            # If LLM is requested and available, trigger the response asynchronously
+            if use_llm and LLM_AVAILABLE:
+                # Create a task to process LLM response and TTS in the background
                 import asyncio
-                asyncio.create_task(process_openai_and_tts(transcription_id, transcription_text, play_audio))
+                asyncio.create_task(process_llm_and_tts(transcription_id, transcription_text, play_audio))
             
             return response_data
         except Exception as e:
@@ -187,60 +182,65 @@ async def transcribe_audio(file: UploadFile = File(...), play_audio: bool = Form
                 "status": "error"
             }
 
-# Dictionary to store OpenAI responses and TTS filenames
+# Dictionary to store LLM responses and TTS filenames
 results_store = {}
 
-async def process_openai_and_tts(transcription_id: str, transcription_text: str, play_audio: bool = False):
-    """Process OpenAI response and TTS generation in the background"""
+async def process_llm_and_tts(transcription_id: str, transcription_text: str, play_audio: bool = False):
+    """Process LLM response and TTS generation in the background"""
     try:
-        # Get response from OpenAI
-        openai_response = await get_openai_response(transcription_text)
+        # Initialize the result in the store with processing state
+        results_store[transcription_id] = {
+            "llm_response": None,
+            "tts_filename": None,
+            "completed": False,
+            "error": None,
+            "status": "processing"
+        }
+
+        # Get response from LLM
+        llm_response = await get_llm_response(transcription_text)
         
-        # Text to use for TTS - either OpenAI response or transcription
-        tts_text = openai_response if openai_response else transcription_text
+        if llm_response is None:
+            # Handle the case where we got no response from the LLM
+            results_store[transcription_id].update({
+                "completed": True,
+                "error": "No response from LLM model",
+                "status": "error"
+            })
+            return
         
-        # TTS generation if requested
-        tts_filename = None
-        if play_audio and TTS_AVAILABLE and tts_model is not None:
+        # Store the successful LLM response
+        results_store[transcription_id].update({
+            "llm_response": llm_response,
+            "completed": True,
+            "status": "success"
+        })
+        
+        # Generate TTS if enabled
+        if play_audio and TTS_AVAILABLE:
             try:
-                logger.info("Generating TTS audio...")
-                tts_filename = await generate_tts(tts_text)
-                logger.info(f"TTS audio generated: {tts_filename}")
-                
-                # Auto-play the audio response
-                if tts_filename:
-                    logger.info("Attempting to auto-play the audio...")
-                    play_success = await play_audio_file(tts_filename)
-                    if play_success:
-                        logger.info("Audio auto-played successfully")
-                    else:
-                        logger.warning("Failed to auto-play audio")
+                tts_filename = await generate_tts(llm_response)
+                results_store[transcription_id]["tts_filename"] = tts_filename
             except Exception as e:
-                logger.error(f"TTS generation error: {str(e)}")
+                logger.error(f"Error in TTS processing: {str(e)}")
                 import traceback
                 logger.error(f"TTS traceback: {traceback.format_exc()}")
-        
-        # Store the results
-        results_store[transcription_id] = {
-            "openai_response": openai_response,
-            "tts_filename": tts_filename,
-            "completed": True
-        }
-        
+                # Don't mark as error if TTS fails, just log it
+                logger.warning("TTS failed but continuing with LLM response")
     except Exception as e:
-        logger.error(f"Background processing error: {str(e)}")
+        logger.error(f"Error in background processing: {str(e)}")
         import traceback
         logger.error(f"Background processing traceback: {traceback.format_exc()}")
-        
-        # Store error in results
-        results_store[transcription_id] = {
+        # Store the error in results
+        results_store[transcription_id].update({
+            "completed": True,
             "error": str(e),
-            "completed": True
-        }
+            "status": "error"
+        })
 
 @app.get("/get_response/{transcription_id}")
 async def get_response(transcription_id: str):
-    """Get the OpenAI response and TTS filename for a given transcription ID"""
+    """Get the LLM response and TTS filename for a given transcription ID"""
     if transcription_id not in results_store:
         return JSONResponse({"error": "Transcription ID not found", "status": "error"}, status_code=404)
     
@@ -249,11 +249,20 @@ async def get_response(transcription_id: str):
     if not result.get("completed", False):
         return {"status": "processing"}
     
+    # If we have a successful LLM response, return it
+    if result.get("status") == "success":
+        return {
+            "status": "success",
+            "llm_response": result.get("llm_response"),
+            "tts_filename": result.get("tts_filename")
+        }
+    
+    # If there was an error, return the error
     return {
-        "openai_response": result.get("openai_response"),
-        "tts_filename": result.get("tts_filename"),
-        "status": "error" if "error" in result else "success",
-        "error": result.get("error")
+        "status": "error",
+        "error": result.get("error", "Unknown error"),
+        "llm_response": None,
+        "tts_filename": None
     }
 
 async def generate_tts(text: str, voice: str = "af_heart", speed: float = 1.0):

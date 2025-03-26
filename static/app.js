@@ -3,14 +3,18 @@ document.addEventListener('DOMContentLoaded', function() {
     const recordingStatus = document.getElementById('recording-status');
     const resultDiv = document.getElementById('result');
     const playAudioCheckbox = document.getElementById('play-audio');
-    const useOpenAICheckbox = document.getElementById('use-openai');
-    const openAIResponseContainer = document.getElementById('openai-response-container');
-    const openAIResponseDiv = document.getElementById('openai-response');
+    const useLLMCheckbox = document.getElementById('use-openai');
+    const llmResponseContainer = document.getElementById('openai-response-container');
+    const llmResponseDiv = document.getElementById('openai-response');
     const loadingAnimation = document.getElementById('loading-animation');
     const audioControls = document.getElementById('audio-controls');
     const playButton = document.getElementById('play-button');
     const stopButton = document.getElementById('stop-button');
     const modelInfoSpan = document.querySelector('.model-info span');
+    
+    // Force hide loading animation on page load
+    loadingAnimation.style.display = 'none';
+    loadingAnimation.classList.add('hidden');
     
     let mediaRecorder;
     let audioChunks = [];
@@ -38,6 +42,9 @@ document.addEventListener('DOMContentLoaded', function() {
                 
                 // Clear audio chunks for next recording
                 audioChunks = [];
+                
+                // Show loading animation when processing starts
+                loadingAnimation.classList.remove('hidden');
                 
                 // Send audio to server for transcription
                 sendAudioForTranscription(audioBlob);
@@ -83,6 +90,10 @@ document.addEventListener('DOMContentLoaded', function() {
             // Update UI
             statusIndicator.classList.add('recording');
             recordingStatus.classList.remove('hidden');
+            resultDiv.textContent = '';
+            llmResponseDiv.textContent = '';
+            llmResponseContainer.classList.add('hidden');
+            audioControls.classList.add('hidden');
             console.log('Recording started');
         }
     }
@@ -97,33 +108,23 @@ document.addEventListener('DOMContentLoaded', function() {
             statusIndicator.classList.remove('recording');
             recordingStatus.classList.add('hidden');
             resultDiv.textContent = 'Processing...';
-            openAIResponseDiv.textContent = '';
-            openAIResponseContainer.classList.add('hidden');
-            audioControls.classList.add('hidden'); // Hide audio controls until we have new TTS
+            // Show loading animation as soon as recording stops
+            loadingAnimation.style.display = 'flex';
+            loadingAnimation.classList.remove('hidden');
             console.log('Recording stopped');
         }
     }
     
     // Send audio to the server for transcription
     async function sendAudioForTranscription(audioBlob) {
-        // Create a FormData object to send the audio file
         const formData = new FormData();
         formData.append('file', audioBlob, 'recording.wav');
-        formData.append('play_audio', playAudioCheckbox.checked);
-        formData.append('use_openai', useOpenAICheckbox.checked);
+        formData.append('play_audio', playAudioCheckbox.checked);  // Request TTS generation if auto-play is enabled
+        formData.append('use_llm', useLLMCheckbox.checked);
         
         try {
             resultDiv.textContent = 'Transcribing...';
             
-            if (useOpenAICheckbox.checked) {
-                openAIResponseDiv.textContent = '';
-                openAIResponseContainer.classList.remove('hidden');
-                loadingAnimation.classList.remove('hidden');
-            } else {
-                openAIResponseContainer.classList.add('hidden');
-            }
-            
-            // Send the audio to our API endpoint
             const response = await fetch('/transcribe/', {
                 method: 'POST',
                 body: formData
@@ -135,95 +136,106 @@ document.addEventListener('DOMContentLoaded', function() {
                 // Update model info if available
                 if (data.models) {
                     const whisperModel = data.models.whisper ? data.models.whisper.split('/').pop() : 'Unknown';
-                    const openaiModel = data.models.openai ? data.models.openai : 'Disabled';
+                    const llmModel = data.models.llm ? data.models.llm.split('/').pop() : 'Disabled';
                     const ttsModel = data.models.tts ? data.models.tts.split('/').pop() : 'Disabled';
                     
-                    modelInfoSpan.textContent = `Using: ${whisperModel} + ${openaiModel}`;
+                    modelInfoSpan.textContent = `Using: ${whisperModel} + ${llmModel}`;
                 }
                 
-                // Display the transcription result immediately
+                // Display the transcription result
                 resultDiv.textContent = data.text || 'No transcription returned';
                 
-                // If OpenAI is enabled, poll for the response
-                if (useOpenAICheckbox.checked && data.transcription_id) {
-                    // Don't need to set text here since we're showing the loading animation
-                    // Start polling for results
-                    pollForOpenAIResponse(data.transcription_id);
+                // If LLM is enabled, poll for the response
+                if (useLLMCheckbox.checked && data.transcription_id) {
+                    pollForLLMResponse(data.transcription_id);
                 } else {
-                    // No OpenAI response expected
-                    openAIResponseContainer.classList.add('hidden');
+                    // If no LLM processing needed, hide loading animation
+                    loadingAnimation.style.display = 'none';
                     loadingAnimation.classList.add('hidden');
                 }
             } else {
                 // Display error message
                 resultDiv.textContent = `Error: ${data.error || 'Unknown error'}`;
-                openAIResponseContainer.classList.add('hidden');
+                loadingAnimation.style.display = 'none';
                 loadingAnimation.classList.add('hidden');
-                audioControls.classList.add('hidden');
                 console.error('Transcription error:', data.error);
             }
         } catch (error) {
             resultDiv.textContent = 'Error connecting to the server';
-            openAIResponseContainer.classList.add('hidden');
+            loadingAnimation.style.display = 'none';
             loadingAnimation.classList.add('hidden');
-            audioControls.classList.add('hidden');
             console.error('Error sending audio for transcription:', error);
         }
     }
     
-    // Poll for OpenAI response and TTS result
-    async function pollForOpenAIResponse(transcriptionId, attempt = 0) {
+    // Poll for LLM response and TTS result
+    async function pollForLLMResponse(transcriptionId, attempt = 0) {
         try {
-            // Maximum 10 attempts (approx. 10 seconds timeout)
-            if (attempt > 10) {
-                openAIResponseDiv.textContent = 'OpenAI response timed out. Please try again.';
+            // Increase timeout to 60 seconds (60 attempts at 1 second intervals)
+            if (attempt > 60) {
+                llmResponseDiv.textContent = 'LLM response timed out. Please try again.';
+                llmResponseContainer.classList.remove('hidden');
+                loadingAnimation.style.display = 'none';
                 loadingAnimation.classList.add('hidden');
-                console.error('Polling for OpenAI response timed out');
+                console.error('Polling for LLM response timed out');
                 return;
             }
             
             const response = await fetch(`/get_response/${transcriptionId}`);
             const data = await response.json();
             
+            // Handle processing state
             if (data.status === 'processing') {
-                // Still processing, wait 1 second and try again
-                console.log('Still processing OpenAI response, polling again...');
-                setTimeout(() => pollForOpenAIResponse(transcriptionId, attempt + 1), 1000);
+                // Continue polling while processing
+                setTimeout(() => pollForLLMResponse(transcriptionId, attempt + 1), 1000);
                 return;
             }
             
-            // Hide loading animation regardless of response
-            loadingAnimation.classList.add('hidden');
+            // Always show the response container
+            llmResponseContainer.classList.remove('hidden');
             
+            // Handle error state
             if (data.status === 'error') {
-                openAIResponseDiv.textContent = `Error: ${data.error || 'Unknown error'}`;
-                console.error('Error getting OpenAI response:', data.error);
+                llmResponseDiv.textContent = data.error || 'Unknown error';
+                loadingAnimation.style.display = 'none';
+                loadingAnimation.classList.add('hidden');
+                console.error('LLM response error:', data.error);
                 return;
             }
             
-            // Display OpenAI response if available
-            if (data.openai_response) {
-                openAIResponseDiv.textContent = data.openai_response;
-                console.log("OpenAI response displayed:", data.openai_response);
+            // Handle success state
+            if (data.status === 'success' && data.llm_response) {
+                llmResponseDiv.textContent = data.llm_response;
+                
+                // Handle TTS if available
+                if (data.tts_filename) {
+                    currentTtsFilename = data.tts_filename;
+                    audioControls.classList.remove('hidden');
+                    
+                    // If auto-play is enabled, play the audio immediately
+                    if (playAudioCheckbox.checked) {
+                        playTtsAudio(); // This will hide the loading animation when audio starts
+                    } else {
+                        // Only hide loading if not auto-playing
+                        loadingAnimation.style.display = 'none';
+                        loadingAnimation.classList.add('hidden');
+                    }
+                } else {
+                    loadingAnimation.style.display = 'none';
+                    loadingAnimation.classList.add('hidden');
+                }
             } else {
-                openAIResponseDiv.textContent = 'No response received from OpenAI.';
-                console.warn("No OpenAI response received");
-            }
-            
-            // Handle TTS audio if available
-            if (data.tts_filename) {
-                currentTtsFilename = data.tts_filename;
-                audioControls.classList.remove('hidden');
-                console.log("TTS filename received:", data.tts_filename);
-                // Server handles auto-play, but we'll show controls for manual replay
-            } else {
-                audioControls.classList.add('hidden');
-                console.warn("No TTS filename received");
+                // This should rarely happen as we handle all states above
+                llmResponseDiv.textContent = 'No response from LLM';
+                loadingAnimation.style.display = 'none';
+                loadingAnimation.classList.add('hidden');
             }
         } catch (error) {
-            openAIResponseDiv.textContent = 'Error getting OpenAI response.';
+            console.error('Error polling for LLM response:', error);
+            llmResponseDiv.textContent = 'Error retrieving LLM response';
+            llmResponseContainer.classList.remove('hidden');
+            loadingAnimation.style.display = 'none';
             loadingAnimation.classList.add('hidden');
-            console.error('Error polling for OpenAI response:', error);
         }
     }
     
@@ -242,11 +254,21 @@ document.addEventListener('DOMContentLoaded', function() {
             
             const data = await response.json();
             
-            if (data.status !== 'playing') {
+            if (data.status === 'playing') {
+                // Immediately hide loading animation when audio starts playing
+                loadingAnimation.style.display = 'none';
+                loadingAnimation.classList.add('hidden');
+            } else {
                 console.error('Error playing audio:', data.error);
+                // Also hide loading animation if there's an error
+                loadingAnimation.style.display = 'none';
+                loadingAnimation.classList.add('hidden');
             }
         } catch (error) {
             console.error('Error playing TTS audio:', error);
+            // Hide loading animation on error
+            loadingAnimation.style.display = 'none';
+            loadingAnimation.classList.add('hidden');
         }
     }
     
