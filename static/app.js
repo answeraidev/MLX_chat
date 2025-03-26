@@ -129,8 +129,6 @@ document.addEventListener('DOMContentLoaded', function() {
     async function sendAudioForTranscription(audioBlob) {
         const formData = new FormData();
         formData.append('file', audioBlob, 'recording.wav');
-        formData.append('play_audio', playAudioCheckbox.checked);  // Request TTS generation if auto-play is enabled
-        formData.append('use_llm', useLLMCheckbox.checked);
         
         try {
             resultDiv.textContent = 'Transcribing...';
@@ -155,8 +153,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 // Display the transcription result
                 resultDiv.textContent = data.text || 'No transcription returned';
                 
-                // If LLM is enabled, poll for the response
-                if (useLLMCheckbox.checked && data.transcription_id) {
+                // Always poll for LLM response if transcription_id is available
+                if (data.transcription_id) {
                     pollForLLMResponse(data.transcription_id);
                 } else {
                     // If no LLM processing needed, hide loading animation
@@ -464,8 +462,6 @@ document.addEventListener('DOMContentLoaded', function() {
     async function sendVADAudioForProcessing(wavBlob) {
         const formData = new FormData();
         formData.append('file', wavBlob, 'vad_recording.wav');
-        formData.append('play_audio', playAudioCheckbox.checked);
-        formData.append('use_llm', useLLMCheckbox.checked);
         
         try {
             resultDiv.textContent = 'Transcribing...';
@@ -481,8 +477,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 // Display the transcription result
                 resultDiv.textContent = data.text || 'No transcription returned';
                 
-                // If LLM is enabled, poll for the response
-                if (useLLMCheckbox.checked && data.transcription_id) {
+                // Always poll for LLM response if transcription_id is available
+                if (data.transcription_id) {
                     pollForLLMResponse(data.transcription_id);
                 } else {
                     // If no LLM processing needed, hide loading animation

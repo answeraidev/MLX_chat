@@ -154,7 +154,7 @@ async def get_llm_response(transcription_text: str):
         return None
 
 @app.post("/transcribe/")
-async def transcribe_audio(file: UploadFile = File(...), play_audio: bool = Form(False), use_llm: bool = Form(True)):
+async def transcribe_audio(file: UploadFile = File(...)):
     # Create a temporary file to store the uploaded audio
     with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(file.filename)[1]) as temp_file:
         # Write the uploaded file content to the temporary file
@@ -192,10 +192,10 @@ async def transcribe_audio(file: UploadFile = File(...), play_audio: bool = Form
                 }
             }
             
-            # If LLM is requested and available, trigger the response asynchronously
-            if use_llm and LLM_AVAILABLE:
+            # Always use LLM and TTS if available
+            if LLM_AVAILABLE:
                 # Create a task to process LLM response and TTS in the background
-                asyncio.create_task(process_llm_and_tts(transcription_id, transcription_text, play_audio))
+                asyncio.create_task(process_llm_and_tts(transcription_id, transcription_text, True))
             
             return response_data
         except Exception as e:
@@ -513,7 +513,7 @@ async def vad_stream(websocket: WebSocket):
         logger.info("VAD WebSocket connection closed")
 
 @app.post("/process-vad-audio/")
-async def process_vad_audio(file: UploadFile = File(...), play_audio: bool = Form(False), use_llm: bool = Form(True)):
+async def process_vad_audio(file: UploadFile = File(...)):
     """Process audio captured using VAD"""
     # This is similar to the transcribe_audio endpoint but specifically for VAD-captured audio
     with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(file.filename)[1]) as temp_file:
@@ -551,10 +551,10 @@ async def process_vad_audio(file: UploadFile = File(...), play_audio: bool = For
                 }
             }
             
-            # If LLM is requested and available, trigger the response asynchronously
-            if use_llm and LLM_AVAILABLE:
+            # Always use LLM and TTS if available
+            if LLM_AVAILABLE:
                 # Create a task to process LLM response and TTS in the background
-                asyncio.create_task(process_llm_and_tts(transcription_id, transcription_text, play_audio))
+                asyncio.create_task(process_llm_and_tts(transcription_id, transcription_text, True))
             
             return response_data
         except Exception as e:

@@ -22,14 +22,16 @@
             <div id="recording-status" class="hidden">RECORDING...</div>
         </div>
         <div class="options">
-            <div class="option-row">
+            <!-- Hidden checkboxes for functionality -->
+            <div class="option-row hidden">
                 <input type="checkbox" id="play-audio" name="play-audio" checked>
                 <label for="play-audio">Play response as speech</label>
             </div>
-            <div class="option-row">
+            <div class="option-row hidden">
                 <input type="checkbox" id="use-openai" name="use-openai" checked>
                 <label for="use-openai">Get AI response (MLX)</label>
             </div>
+            <!-- Visible VAD option -->
             <div class="option-row">
                 <input type="checkbox" id="use-vad" name="use-vad">
                 <label for="use-vad">Use Voice Activity Detection</label>

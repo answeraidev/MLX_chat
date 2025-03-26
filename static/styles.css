@@ -112,8 +112,6 @@ h1 {
 
 .hidden {
     display: none !important;
-    opacity: 0;
-    visibility: hidden;
 }
 
 .result-container {
